@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Binance Market Data WebSocket</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.1.0"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    #candlestickChart {
+      width: 100%;
+      height: 400px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container mt-4">
+  <div class="row">
+    <div class="col-12">
+      <h2 class="text-center">Binance Market Data WebSocket</h2>
+      <div class="d-flex justify-content-center my-3">
+        <select id="cryptoToggle" class="form-select w-auto">
+          <option value="ethusdt">ETH/USDT</option>
+          <option value="bnbusdt">BNB/USDT</option>
+          <option value="dotusdt">DOT/USDT</option>
+        </select>
+        <select id="intervalToggle" class="form-select w-auto ms-2">
+          <option value="1m">1 Minute</option>
+          <option value="3m">3 Minute</option>
+          <option value="5m">5 Minute</option>
+        </select>
+      </div>
+    </div>
+    <div class="col-12">
+      <canvas id="candlestickChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  let chart, ws;
+  let currentInterval = '1m';
+  let coinData = {
+    'ethusdt': [],
+    'bnbusdt': [],
+    'dotusdt': []
+  };
+
+  function connectWebSocket(symbol, interval) {
+    ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol}@kline_${interval}`);
+    ws.onmessage = function(event) {
+      const data = JSON.parse(event.data);
+      if (data.k && data.k.x) {
+        updateChart(data.k);
+        persistChartData(symbol, data.k);
+      }
+    };
+  }
+
+  function initChart(symbol, storedData) {
+    const ctx = document.getElementById('candlestickChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'candlestick',
+      data: {
+        datasets: [{
+          label: `${symbol.toUpperCase()} Candlestick Chart`,
+          data: storedData
+        }]
+      },
+      options: {
+        scales: {
+          x: { type: 'time' },
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  function updateChart(newCandle) {
+    const candle = {
+      x: new Date(newCandle.t),
+      o: parseFloat(newCandle.o),
+      h: parseFloat(newCandle.h),
+      l: parseFloat(newCandle.l),
+      c: parseFloat(newCandle.c)
+    };
+    chart.data.datasets[0].data.push(candle);
+    chart.update();
+  }
+
+  function persistChartData(symbol, newCandle) {
+    const candleData = {
+      x: new Date(newCandle.t),
+      o: parseFloat(newCandle.o),
+      h: parseFloat(newCandle.h),
+      l: parseFloat(newCandle.l),
+      c: parseFloat(newCandle.c)
+    };
+    coinData[symbol].push(candleData);
+    localStorage.setItem(symbol, JSON.stringify(coinData[symbol]));
+  }
+
+  function getStoredData(symbol) {
+    return JSON.parse(localStorage.getItem(symbol)) || [];
+  }
+
+  document.getElementById('cryptoToggle').addEventListener('change', function(e) {
+    const selectedCoin = e.target.value;
+    if (chart) chart.destroy();
+    const previousData = getStoredData(selectedCoin);
+    initChart(selectedCoin, previousData);
+    if (ws) ws.close();
+    connectWebSocket(selectedCoin, currentInterval);
+  });
+
+  document.getElementById('intervalToggle').addEventListener('change', function(e) {
+    currentInterval = e.target.value;
+    const selectedCoin = document.getElementById('cryptoToggle').value;
+    if (ws) ws.close();
+    connectWebSocket(selectedCoin, currentInterval);
+  });
+
+  window.onload = function() {
+    const initialCoin = document.getElementById('cryptoToggle').value;
+    const initialData = getStoredData(initialCoin);
+    initChart(initialCoin, initialData);
+    connectWebSocket(initialCoin, currentInterval);
+  };
+</script>
+
+</body>
+</html>
